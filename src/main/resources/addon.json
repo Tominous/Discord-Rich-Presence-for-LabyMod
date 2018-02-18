@@ -1,0 +1,9 @@
+{
+  "uuid": "%uuid%",
+  "name": "Discord Rich Presence",
+  "mainClass": "me.tea.labymoddiscordrp.LabyModDiscordRP",
+  "description": "This is a Discord Rich Presence. Github: ...",
+  "version": 1,
+  "author": "TheEvilArchitect",
+  "category": 2
+}
