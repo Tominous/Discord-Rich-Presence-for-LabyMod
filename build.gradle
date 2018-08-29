@@ -1,3 +1,7 @@
+configurations {
+    includeInJar
+}
+
 buildscript {
     repositories {
         jcenter()
@@ -33,11 +37,20 @@ minecraft {
     // makeObfSourceJar = false // an Srg named sources jar is made by default. uncomment this to disable.
 }
 
+repositories {
+    mavenCentral()
+    maven { url = "http://repo.spring.io/plugins-release" }
+}
+
 dependencies {
     // you may put jars on which you depend on in ./libs
     // or you may define them like so..
     //compile "some.group:artifact:version:classifier"
     //compile "some.group:artifact:version"
+
+    // https://mvnrepository.com/artifact/club.minnced/discord-rpc-release
+    //compile group: 'club.minnced', name: 'discord-rpc-release', version: 'v3.3.0'
+    //extraLibs 'club.minnced', name: 'discord-rpc-release', version: 'v3.3.0'
       
     // real examples
     //compile 'com.mod-buildcraft:buildcraft:6.0.8:dev'  // adds buildcraft to the dev env
