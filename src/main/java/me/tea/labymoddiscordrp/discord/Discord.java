@@ -1,104 +1,85 @@
 package me.tea.labymoddiscordrp.discord;
 
-import club.minnced.discord.rpc.DiscordEventHandlers;
-import club.minnced.discord.rpc.DiscordRPC;
-import club.minnced.discord.rpc.DiscordRichPresence;
 import me.tea.labymoddiscordrp.LabyModDiscordRP;
-
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import net.arikia.dev.drpc.DiscordEventHandlers;
+import net.arikia.dev.drpc.DiscordRPC;
+import net.arikia.dev.drpc.DiscordRichPresence;
 
 public class Discord {
 
     private LabyModDiscordRP plugin;
 
-    private DiscordRPC rpc;
-    private boolean isShutdown;
-
-    private boolean hasCallbacksStarted = false;
-    private boolean hasAutoUpdateStarted = false;
-
-    private ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
+    private boolean isShutdown = false;
 
     public Discord(LabyModDiscordRP plugin){
         this.plugin = plugin;
-        isShutdown = false;
 
-        restartRPC();
-    }
-
-    public void shutdownRPC(){
-        rpc.Discord_Shutdown();
-        isShutdown = true;
-        hasAutoUpdateStarted = false;
-    }
-
-    public void restartRPC(){
-        rpc = DiscordRPC.INSTANCE;
-
-        DiscordEventHandlers handlers = new DiscordEventHandlers();
-        handlers.ready = () -> {
-            isShutdown = false;
-            System.out.println("Minecraft to Discord connection is ready!");
-        };
-
-        handlers.errored = (s, x) -> System.out.println("Error: " + x);
-        handlers.disconnected = (s, x) -> System.out.println("Disconnected: " + x);
-
-        rpc.Discord_Initialize("414070670423490561", handlers, true, "");
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("DiscordRPC shutting down.");
+            DiscordRPC.discordShutdown();
+        }));
 
         runAutoUpdate();
         runCallbacks();
     }
 
-    private void runAutoUpdate(){
-        if(hasAutoUpdateStarted)
-            return;
+    public void shutdownRPC(){
+        DiscordRPC.discordShutdown();
+        isShutdown = true;
+    }
 
-        hasAutoUpdateStarted = true;
+    public void restartRPC(){
+        DiscordEventHandlers handlers = new DiscordEventHandlers();
 
-        Runnable callbackRunnable = () -> {
-            if(!(hasAutoUpdateStarted))
-                return;
-
-            try{
-                if(!(isShutdown)){
-                    if(plugin.isOnServer())
-                        updatePresence(plugin.getSettings().getServerDetailText(), plugin.getSettings().getServerStateText());
-                    else
-                        updatePresence(plugin.getSettings().getMenuDetailText(), plugin.getSettings().getMenuStateText());
-                }
-
-                Thread.sleep(3);
-            }catch(InterruptedException ignored){}
+        handlers.ready = () -> {
+            isShutdown = false;
+            System.out.println("Discord to Minecraft connection is ready!");
         };
 
-        executor.scheduleAtFixedRate(callbackRunnable, 0, 1, TimeUnit.SECONDS);
+        handlers.errored = (s, x) -> {
+            isShutdown = true;
+            DiscordRPC.discordShutdown();
+            System.out.println("Error: " + x);
+        };
+
+        handlers.disconnected = (s, x) -> {
+            isShutdown = true;
+            DiscordRPC.discordShutdown();
+            System.out.println("Disconnected: " + x);
+        };
+
+        isShutdown = false;
+        DiscordRPC.discordInitialize("414070670423490561", handlers, true);
+    }
+
+    private void runAutoUpdate(){
+        new Thread(() -> {
+            while (!Thread.currentThread().isInterrupted()) {
+                try {
+
+                    if (!(isShutdown)) {
+                        if (plugin.isOnServer())
+                            updatePresence(plugin.getSettings().getServerDetailText(), plugin.getSettings().getServerStateText());
+                        else
+                            updatePresence(plugin.getSettings().getMenuDetailText(), plugin.getSettings().getMenuStateText());
+
+                        Thread.sleep(1000);
+                    }
+                } catch(InterruptedException ignored){ }
+            }
+        }, "RPC-Update-Handler").start();
     }
 
 
     private void runCallbacks(){
-        if(hasCallbacksStarted)
-            return;
-
-        hasCallbacksStarted = true;
-
-        Runnable callbackRunnable = () -> {
-            if(!(hasCallbacksStarted))
-                return;
-
-            rpc.Discord_RunCallbacks();
-            try {
-                Thread.sleep(1);
-            } catch (InterruptedException ex) {
-                rpc.Discord_Shutdown();
-                isShutdown = true;
-                hasCallbacksStarted = false;
+        new Thread(() -> {
+            while (!Thread.currentThread().isInterrupted()) {
+                DiscordRPC.discordRunCallbacks();
+                try {
+                    Thread.sleep(2000);
+                } catch (InterruptedException ignored) {}
             }
-        };
-
-        executor.scheduleAtFixedRate(callbackRunnable, 0, 500, TimeUnit.MILLISECONDS);
+        }, "RPC-Callback-Handler").start();
     }
 
     private void updatePresence(String details, String state){
@@ -109,6 +90,8 @@ public class Discord {
 
         presence.smallImageText = "Minecraft";
         presence.largeImageKey = "minecraftlarge";
+
+        details = details.replace("%server%", plugin.getServer()).replace("%players%", plugin.getPlayers());
         state = state.replace("%server%", plugin.getServer()).replace("%players%", plugin.getPlayers());
 
         if(!details.isEmpty())
@@ -120,6 +103,6 @@ public class Discord {
         if(plugin.getSettings().isTimeElapsedShowing())
             presence.startTimestamp = plugin.getTimeElapsed();
 
-        rpc.Discord_UpdatePresence(presence);
+        DiscordRPC.discordUpdatePresence(presence);
     }
 }

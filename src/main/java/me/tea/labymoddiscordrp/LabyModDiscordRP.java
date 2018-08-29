@@ -9,6 +9,7 @@ import net.labymod.settings.elements.ControlElement;
 import net.labymod.settings.elements.SettingsElement;
 import net.labymod.settings.elements.StringElement;
 import net.labymod.utils.Material;
+import net.minecraft.client.Minecraft;
 
 import java.util.List;
 import java.util.concurrent.Executors;
@@ -17,7 +18,7 @@ import java.util.concurrent.ScheduledExecutorService;
 public class LabyModDiscordRP extends LabyModAddon {
 
     private UserSettings settings;
-    private Discord discord;
+    public Discord discord;
 
     private boolean isOnServer = false;
     private String server;
@@ -62,14 +63,18 @@ public class LabyModDiscordRP extends LabyModAddon {
 
     @Override
     public void onEnable() {
-        settings = new UserSettings();
+        settings = new UserSettings(this);
         discord = new Discord(this);
         timeElapsed = System.currentTimeMillis() / 1000;
         players = 0;
 
         this.getApi().getEventManager().registerOnJoin(serverData -> {
             isOnServer = true;
-            server = serverData.getIp();
+
+            if(!getSettings().isShowNumberedIPs() && serverData.getIp().replace(".", "").matches("\\d+")){
+                server = "[Hidden]";
+            }else
+                server = serverData.getIp().toLowerCase();
         });
 
         this.getApi().getEventManager().registerOnQuit(serverData -> isOnServer = false);
@@ -84,27 +89,52 @@ public class LabyModDiscordRP extends LabyModAddon {
     public void loadConfig() {
         if(getConfig().has("rpcEnabled"))
             settings.setRpcEnabled(getConfig().get("rpcEnabled").getAsBoolean());
+        else {
+            getConfig().addProperty("rpcEnabled", true);
+            discord.restartRPC();
+        }
 
         if(getConfig().has("showServer"))
             settings.setShowServer(getConfig().get("showServer").getAsBoolean());
+        else
+            getConfig().addProperty("showServer", true);
 
         if(getConfig().has("showPlayers"))
-            settings.setShowServer(getConfig().get("showPlayers").getAsBoolean());
+            settings.setShowPlayers(getConfig().get("showPlayers").getAsBoolean());
+        else
+            getConfig().addProperty("showPlayers", true);
+
+        if(getConfig().has("showNumericalIP"))
+            settings.setShowNumberedIPs(getConfig().get("showNumericalIP").getAsBoolean());
+        else
+            getConfig().addProperty("showNumericalIP", false);
 
         if(getConfig().has("showTimeElapsed"))
             settings.setShowTimeElapsed(getConfig().get("showTimeElapsed").getAsBoolean());
-
-        if(getConfig().has("rpcMenuState"))
-            settings.setMenuStateText(getConfig().get("rpcMenuState").getAsString());
+        else
+            getConfig().addProperty("showTimeElapsed", true);
 
         if(getConfig().has("rpcMenuDetail"))
             settings.setMenuDetailText(getConfig().get("rpcMenuDetail").getAsString());
+        else
+            getConfig().addProperty("rpcMenuDetail", settings.getMenuDetailText());
 
-        if(getConfig().has("rpcServerState"))
-            settings.setServerStateText(getConfig().get("rpcServerState").getAsString());
+        if(getConfig().has("rpcMenuState"))
+            settings.setMenuStateText(getConfig().get("rpcMenuState").getAsString());
+        else
+            getConfig().addProperty("rpcMenuState", settings.getMenuStateText());
 
         if(getConfig().has("rpcServerDetail"))
             settings.setServerDetailText(getConfig().get("rpcServerDetail").getAsString());
+        else
+            getConfig().addProperty("rpcServerDetail", settings.getServerDetailText());
+
+        if(getConfig().has("rpcServerState"))
+            settings.setServerStateText(getConfig().get("rpcServerState").getAsString());
+        else
+            getConfig().addProperty("rpcServerState", settings.getServerStateText());
+
+        saveConfig();
     }
 
     @Override
@@ -114,12 +144,7 @@ public class LabyModDiscordRP extends LabyModAddon {
             getConfig().addProperty("rpcEnabled", state);
             saveConfig();
 
-            if(!(state)){
-                discord.shutdownRPC();
-                return;
-            }
-
-            discord.restartRPC();
+            settings.setRpcEnabled(state);
         }, settings.isRpcEnabled()));
 
         // Show Server.
@@ -130,13 +155,21 @@ public class LabyModDiscordRP extends LabyModAddon {
             settings.setShowServer(state);
         }, settings.isShowingServer()));
 
-        // Time Elapsed.
+        // Show Player Count.
         subSettings.add(new BooleanElement("Show Player Count", new ControlElement.IconData(Material.LEVER), state -> {
             getConfig().addProperty("showPlayers", state);
             saveConfig();
 
             settings.setShowPlayers(state);
         }, settings.isShowingPlayers()));
+
+        // Show Numerical IPs.
+        subSettings.add(new BooleanElement("Show Numerical IP", new ControlElement.IconData(Material.LEVER), state -> {
+            getConfig().addProperty("showNumericalIP", state);
+            saveConfig();
+
+            settings.setShowNumberedIPs(state);
+        }, settings.isShowNumberedIPs()));
 
         // Time Elapsed.
         subSettings.add(new BooleanElement("Show Time Elapsed", new ControlElement.IconData(Material.LEVER), state -> {
@@ -146,14 +179,6 @@ public class LabyModDiscordRP extends LabyModAddon {
             settings.setShowTimeElapsed(state);
         }, settings.isTimeElapsedShowing()));
 
-        // Menu state.
-        StringElement menuState = new StringElement("Menu State Message:", new ControlElement.IconData(Material.PAPER), settings.getMenuStateText(), message -> {
-            settings.setMenuStateText(message);
-            getConfig().addProperty("rpcMenuState", message);
-
-            saveConfig();
-        });
-
         // Menu detail.
         StringElement menuDetail = new StringElement("Menu Detail Message:", new ControlElement.IconData(Material.PAPER), settings.getMenuDetailText(), message -> {
             settings.setMenuDetailText(message);
@@ -162,10 +187,10 @@ public class LabyModDiscordRP extends LabyModAddon {
             saveConfig();
         });
 
-        // Server state.
-        StringElement ServerState = new StringElement("Server State Message:", new ControlElement.IconData(Material.PAPER), settings.getServerStateText(), message -> {
-            settings.setServerStateText(message);
-            getConfig().addProperty("rpcServerState", message);
+        // Menu state.
+        StringElement menuState = new StringElement("Menu State Message:", new ControlElement.IconData(Material.PAPER), settings.getMenuStateText(), message -> {
+            settings.setMenuStateText(message);
+            getConfig().addProperty("rpcMenuState", message);
 
             saveConfig();
         });
@@ -178,11 +203,17 @@ public class LabyModDiscordRP extends LabyModAddon {
             saveConfig();
         });
 
-        subSettings.add(menuState);
+        // Server state.
+        StringElement ServerState = new StringElement("Server State Message:", new ControlElement.IconData(Material.PAPER), settings.getServerStateText(), message -> {
+            settings.setServerStateText(message);
+            getConfig().addProperty("rpcServerState", message);
+
+            saveConfig();
+        });
+
         subSettings.add(menuDetail);
-        subSettings.add(ServerState);
+        subSettings.add(menuState);
         subSettings.add(ServerDetail);
+        subSettings.add(ServerState);
     }
-
-
 }
